@@ -1,4 +1,4 @@
-Clustering
+#Clustering
 
 ## Definition
 
@@ -214,10 +214,10 @@ In other words, under the above functions, the problem requires to find the $k$-
 
 Let $P$ be a point-set from a metric space $(M,d)$. For every integer $k \in [1, |P|]$ we define:
 
-- $\Phi^{opt}_{kcenter}(P,k)$ = minimum value of $\Phi_{kcenter}(C)$ over all possible $k$-clustering $C$ of $P$.
+- $\Phi^{opt}_{kcenter}(P,k)$ = Minimum value of $\Phi_{kcenter}(C)$ over all possible $k$-clustering $C$ of $P$.
 
-- $\Phi^{opt}_{kmeans}(P,k)$ = minimum value of $\Phi_{kmeans}(C)$ over all possible $k$-clustering $C$ of $P$.
-- $\Phi^{opt}_{kmedian}(P,k)$ = minimum value of $\Phi_{kmedian}(C)$ over all possible $k$-clustering $C$ of $P$.
+- $\Phi^{opt}_{kmeans}(P,k)$ = Minimum value of $\Phi_{kmeans}(C)$ over all possible $k$-clustering $C$ of $P$.
+- $\Phi^{opt}_{kmedian}(P,k)$ = Minimum value of $\Phi_{kmedian}(C)$ over all possible $k$-clustering $C$ of $P$.
 
 Also, for any point $p \in P$ and any subset $S \sube P$ we define;
 $$
@@ -351,6 +351,520 @@ and the theorem follows.
   $$
   Hence the Farthest-First Traversal is likely to provide almost the best approximation guarantee obtainable in polynomial time.
 
+
+
+### K-center clustering for big data
+
+*How can we compute a “good” k-center clustering of a points $P$ ​that is too large for a single machine?*
+
+We empty a **coreset-based approach**:
+
+1. Extract from $P$ a small $T$ (**coreset**) of representatives.
+2. Compute within $T$ the set $S$ of $k$ cluster centers.
+3. Compute the final clustering around the centers of $S$.
+
+**Observations:**
+
+- The core-set-based approach is effective when Steps 1 and 3 can be performed efficiently (e.g., in parallel), and from the core-set $T$ a good set of centers can be extracted.
+- Coresets are used to confine computations on small instances when they are too expensive to run on the whole input. 
+- A coreset needs not be a simple subset of the input. 
+
+
+
+### MapReduce-Farthest-First Traversal
+
+Let $P$ be a set of $N$ points ($N$ large!) from a metric space $(M,d)$, and let $k > 1$ be an integer. The following MapReduce algorithm, computes a good k-center clustering.
+
+- Round 1: Partition $P$ arbitrarily in $\ell$ subset of equal size $P_1,P_2,\dots,P_{\ell}$ and execute the Farthest-First Traversal algorithm on each $P_i$ separately and determine a set $T_i$ of $k$ centers, for $1 \le i \le \ell$.
+- Round 2: Gather the **coreset** $T=\bigcup_{i=1}^\ell T_i$ (of size $\ell \cdot k$) and run, using a single reducer, the Farthest-First Traversal algorithm on $T$ to determine a set $S=\{c_1,c_2,\dots,c_k\}$ of $k$ centers.
+- Round 3: Execute ${\text{Partition(P, S)}}$.
+
+#### Analysis
+
+Assume $k = o(N)$. By setting $\ell = \sqrt{N/k}$, it is easy to see that the 3-round MR-Farthest-First traversal algorithm uses
+
+- Local space $M_L = O(\sqrt{N\cdot k})$= $o(N)$ 					
+- Aggregate space $M_A=O(N)$	 					 				 			 		
+
+$\bold{\text{Theorem}}$
+
+*Let $C_{alg}$ be the $k$-clustering of $P$ returned by the MR-Farthest-First Traversal algorithm. Then:*
+$$
+\Phi_{kcenter}(C_{alg}) 
+\le 4 \cdot \Phi_{kcenter}^{opt}(P,k)
+$$
+*That is, MR-Farthest-First Traversal is a 4-approximation algorithm.*
+
+$\bold{\text{Proof}}$
+
+For $1 \le i \le \ell$, let $d_i$ be the maximum distance of a point of $P_i$ from the centers $T_i$ determined in Round 1.
+
+By reasoning as in the proof of the previous theorem, we can show that there exist $k+1$ points in $P_i$ whose pairwise distances are all $\ge d_i$. At least two such points, say $x,y$ must belong to the same cluster of the optimal clustering for $P$ (not $P_i$!), with center $c$. Therefore:
+$$
+d_i \le d(x,y) \le d(x,c)+d(c,y) \le 2\Phi^{opt}_{kcenter} (P,k)
+$$
+Consider now the set of center $S$ determined in Round 2 from the coreset $T$, and let $d_T$ be the maximum distance of a point of $T$ from $S$. The same argument as above shows that $d_T \le 2 \Phi^{opt}_{kcenter}(P,k)$.
+
+Finally, consider an arbitrary point $p \in P$ and suppose that $p \in P_i$, for some $1 \le i \le \ell$. By virtue of the two inequalities derived previously, we know that there must exist a point $t \in T_i$ (hence $t \in T$) and a point $c \in S$, such that:
+$$
+\begin{align}
+d(p,t)\ &\le\ 2 \Phi_{kcenter}^{opt}(P,k)\\
+d(t,c)\ &\le\ 2 \Phi_{kcenter}^{opt}(P,k)
+\end{align}
+$$
+Therefore, by triangle inequality, we have that
+$$
+d(p,c)\le d(p,t) + d(t,c) \le 4 \Phi^{opt}_{kcenter}(P,k)
+$$
+And this immediately implies that $\Phi_{kcenter}(C_{alg})\le 4 \cdot \Phi^{opt}_{kcenter} (P,k)$.
+
+<div style="font-size:30px" align="right">□</div>
+
+#### Observations
+
+- The sequential Farthest-First Traversal algorithm is used both to extract the coreset and to compute the final set of centers. It provides a good core-set since it ensures that any point not in the core-set be well represented by some core-set point. 
+- The main feature of MR-Farthest-First Traversal is that while only small subsets of the input are processed at once, and many of them in parallel, the final approximation is not too far from the best achievable one. 
+- By selecting $k′ > k$ centers from each subset $P_i$ in Round 1, the quality of the final clustering improves. In fact, it can be shown that when $P$ satisfy certain properties and $k′$ is sufficiently large, MR-Farthest-First Traversal returns a $(2 + \varepsilon)$-approximation for any constant $\varepsilon > 0$, still using sub-linear local space and linear aggregate space. 
+
+
+
+## K-means clustering
+
+### Definition and observations
+
+Given a points $P$ from a metric space $(M,d)$ and an integer $k > 0$, the **$k$-means clustering** problem requires to determine a $k$-clustering $C=(C_1,C_2,\dots C_k;c_1,c_2,\dots, c_k)$ which minimizes:
+$$
+\Phi_{kmeans}(\mathcal{C}) = 
+\sum^k_{i=1}\sum_{a \in C_i}(d(a,c_i))^2
+$$
+**Observations:**
+
+- K-means clustering aims at **minimizing cluster variance**, and works well for discovering ball-shaped clusters.
+- Because of the quadratic dependence on distances, k-means clustering is **rather sensitive to outliers** (though less than k-center).
+- Some established algorithms for k-means clustering **perform well in practice** although only recently a rigorous assessment of their performance-accuracy tradeoff has been carried out.
+
+### Aim
+
+Our aim for this tipe of clustering is to work on **Euclidean spaces** $\R^D$ with the **unrestricted version** of the problem where **center need not belong to input** $P$.
+
+We will review popular, state-of-the-art algorithms and critical assessment of they suitability for a big data scenario.
+
+We will also study novel 2-round core-set-based Map-Reduce algorithms.
+
+###Properties of Euclidean spaces
+
+Let $X = (X_1,X_2, \dots, X_D)$ and $Y = (Y_1,Y_2, \dots, Y_D)$ be two points in $\R^D$. Recall that their Euclidean distance is 
+$$
+d(X,Y) = \sqrt{\sum_{i=1}(X_i-Y_i)^2} \triangleq ||X-Y||
+$$
+
+#### Centroid
+
+$\bold{\text{Definition}}$
+
+The **centroid** of a set $P$ of $N$ points in $\R^D$ is:
+$$
+c(P) = \frac 1 N \sum_{X \in P} X
+$$
+where the sum is component-wise.
+
+Observe that $c(P)$ does not necessarily belong to $P$
+
+
+
+$\bold{\text{Lemma}}$
+
+*The **centroid ** $c(P)$ of a set $P \sub \R^D$ is the point of $R^D$ which minimizes the sum of the square distances to all points of $P$.*
+
+$\bold{\text{Proof}}$
+
+Consider an arbitrary point $Y \in \R^D$. We have that
+$$
+\begin{align}
+\sum_{X \in P}(d(X,Y))^2\quad &= \quad
+\sum_{X \in P}||X-Y||^2\\
+&=\quad \sum_{X \in P}||X - c_P +c_P -Y||^2\\
+&=\quad (\sum_{X \in P}||X - c_P||)^2 + N||c_P-Y||^2 \\
+&\quad\quad+ 2(c_P - Y) \cdot \bigg(\sum_{X\in P}(X-c_P)\bigg)\nonumber
+\end{align}
+$$
+Where “$\cdot$“ denotes the inner product.
+
+By definition of $c_p$ we have that $\sum_{X \in P}(X - c_P) = (\sum_{X \in P}X) -N_{c_P}  $ is the all-0’s vector, hence:
+$$
+\begin{align}
+\sum_{X \in P}(d(X,Y))^2\quad &= \quad
+\sum_{X \in P}||X-c_P||^2 + N||c_P-Y||^2\\
+&\ge\quad \sum_{X \in P}||X - c_P||^2\\
+&=\quad (\sum_{X \in P}(d(X,c_P))^2 \\
+\end{align}
+$$
+
+<div style="font-size:30px" align="right">□</div>
+
+**Observation:** The lemma implies that when seeking a $k$-clustering for points in $\R^D$ which minimizes the **kmeans** objective, the best center to select for each cluster is its centroid (assuming that centers need not necessarily belong to the input point-set).
+
+
+
+###Lloyd’s algorithm
+
+Also known as **k-means algorithm**, it was developed by Stuart Lloyd in 1957 and become (one of) the most popular algorithm for unsupervised learning.
+
+In 2006 it was listed as one of the top 10 most influential data mining algorithms.
+
+It relates to a generalization of the Expectation-Maximization algorithm.
+
+$\bold{\text{Input}}$: Set $P$ of $N$ points from $\R^D$, integer $k > 1$
+
+$\bold{\text{Output}}$: $k$-clustering $\mathcal{C} = (C_1,C_2,\dots,C_k;c_1,c_2,\dots cC_k)$ of $P$ with small $\Phi_{kmeans}(\mathcal{C})$. Centers need not to be in $P$.
+$$
+\begin{multline*}
+\begin{aligned}
+& \bold{\text{Lloyd(P, k)}}\\
+1.\ & S\larr \text{arbitrary set of}\ k \text{ points in } \R^D\\
+2.\ & \Phi \larr \infty\\
+3.\ & \text{stopping-condition } \larr \text{false} \\
+4.\ &\bold{\text{while}} \text{ (!stopping-condition)} \bold{\text{ do}}\\
+5.\ &\quad(C_1,C_2,\dots,C_k; S) \larr \text{Partition(P,S)}\\
+6.\ &\quad \bold{\text{for }} i\larr 1 \bold{\text{ to }} k \bold{\text{ do }} c'_i \larr \text{ centroid of } C_i \\
+7.\ &\quad \mathcal{C} \larr (C_1,C_2,\dots,C_k; c'_1,c'_2,\dots,c'_k)\\
+8.\ &\quad \bold{\text{if }} \Phi_{kmeans}(\mathcal{C}) < \Phi \bold{\text{ then}}\\
+9.\ &\quad \quad \Phi \larr \Phi{kmeans}(\mathcal{C})\\
+10.\ &\quad \quad S \larr \{c'_1,c'_2,\dots,c'_k\}\\
+11.\ &\quad \bold{\text{else }} \text{stopping-condition} \larr \text{true}  \\
+12.\ &\bold{\text{return}}\ C
+\end{aligned}
+\end{multline*}
+$$
+**Example:**
+
+<img src="assets/lloyd.png">
+
+
+
+$\bold{\text{Theorem}}$ 
+
+*The Lloyd’s algorithm always terminates.*
+
+$\bold{\text{Proof}}$
+
+Let $\mathcal{C_t}$ be the $k$-clustering computed by the algorithm in Iteration $t\ge1$ of the while loop (line 7). We have:
+
+- By construction, the objective function values $\Phi_{kmeans}(\mathcal{C}_t)$’s, for every $t$ except for the last one, form a strictly decreasing sequence. Also, in the last iteration (say Iteration $t^*$) $\Phi_kmeans(\mathcal{C}_{t^*}) = \Phi_{kmeans}(\mathcal{C}_{t^*-1})$, since the invocation of Partition and the subsequent recompilation of the centroids in this iteration cannot increase the value of the objective function.
+- Each $\mathcal{C}_t$ is uniquely determined by the partition of $P$ into $k$ clusters computed at the beginning of iteration $t$.
+- By the above two points we conclude that all $\mathcal{C}_t$’s, except possibly the last one, are determined by distinct partition of $P$.
+
+The theorem follows immediately since there are $k^N$ possible partitions of $P$ into $\le k$ clusters (counting also permutation of the same partition).
+
+#### Observations
+
+1. Lloyd’s algorithm may be trapped into a local optimum whose value of the objective function can be much larger than the optimal value. Hence, no guarantee can be proved on its accuracy. Consider the following example and suppose that $k = 3$.
+
+   <img src="assets/lloyd_example.png" height=250>
+
+   If initially one center falls among the points on the left side, and two centers fall among the points on the right side, it is impossible that one center moves from right to left, hence the two obvious clusters on the left will be considered as just one cluster.
+
+2. While the algorithm surely terminates, the number of iterations can be exponential in the input size. 
+
+3. Besides the trivial $k^N$ **upper bound** on the number of iterations, more sophisticated studies proved an $O(􏰊N^{kD})$ **􏰋 upper bound** which improves upon the trivial one, in scenarios where $k$ and $D$ are small.
+
+4. Some recent studies proved also a $2^{\Omega(\sqrt N)}$ **lower bound** on the number of iterations in the worst case.
+
+5. mprical studies show that, in practice, the algorithm requires much less than N iterations, and, if properly seeded (see next slides) it features guaranteed accuracy. 
+
+6. Despite the not so promising theoretical results, empirical studies show that**, in practice, the algorithm requires much less than $N$ iterations**, and, if properly seeded it features guaranteed accuracy. 
+
+7. To improve performance, with a limited quality penalty, one could stop the algorithm earlier, e.g., when the value of the objective function decreases by a small additive factor. 
+
+#### Effective initialization
+
+The quality of the solution and the speed of convergence of Lloyd’s algorithm depend considerably from the choice of the initial set of centers (e.g., consider the previous example). Typically initial centers are chosen at random, but there are more effective ways of selecting them.
+
+In 2007, D. Arthur and S. Vassilvitskii developed **k-means++**, a careful center initialization strategy that yields clusterings not too far from the optimal ones.  
+
+
+
+### K-means++
+
+Let $P$ be a set of $N$ points from $\R^D$, and let $k>1$ ne an integer.
+
+The **K-means++ algorithm** computes a (initial) set $S$ of $k$ centers for $P$ using the following procedure (note that $S \sube P$):
+$$
+\begin{multline*}
+\begin{aligned}
+& \bold{\text{K-means++(P, k)}}\\
+1.\ & c_1\larr \text{random point chosen from}\ P\text{ with uniform probability } \R^D\\
+2.\ & S \larr \{c_1\}\\
+3.\ & \bold{\text{for }} i\larr 2 \bold{\text{ to }} k \bold{\text{ do }}\\
+4.\ &\quad c_i \larr \text{random point chosen from  } P-S \text{, where a point } p\\ 
+&\quad\quad\quad\ \text{is chosen with probability} \quad\frac{(d(p,S))^2}{\sum_{q \in P-S}(d(q,S))^2}\\
+5.\ &\quad S \larr S \cup \{c_i\}\\
+6.\ &\bold{\text{return}}\ S
+\end{aligned}
+\end{multline*}
+$$
+**Observation**:
+
+Although k-means++ already provides a good set of centers for the k-means problem (see next theorem) it can be used to provide the initialization for Lloyd’s algorithm, whose iterations can only improve the initial solution.
+
+#### Details on the selection of $c_i$
+
+Consider iteration $i $ of the for loop of k-means++ ($i\ge2$)      
+
+Let $S$ be the current set of $i-1 $ already discovered centers.
+
+- Let $P-S=\{p_j : 1 \le j \le |P-S|\}$ (arbitrary order), and define $\pi_j = (d(p_j,S))^2/(\sum_{q \in P-S}(d(q,S))^2)$. Note that the $\pi_j$’s define a probability distribution, that is, $\sum_{j\ge1}\pi_j = 1$.
+
+- Draw a random number $x \in [0,1]$ and set $c_i = p_r$, where $r$ is the unique index between $1$ and $|P-S|$ such that
+  $$
+  \sum_{j=1}^{r-1}\pi_j \le x 
+  \le \sum_{j=1}^{r}\pi_j
+  $$
   
 
-  
+<img src="assets/select_c.png">
+
+
+
+#### Analysis
+
+$\bold{\text{Theorem (Arthur-Vassilvitskii ‘07)}}$
+
+*Let $\Phi_{kmeans}^{opt}(k)$ be the minimum value o f $\Phi_{kmeans}(\mathcal{C})$ over all possible $k$-clustering $\mathcal{C}$ of $P$, and let $\mathcal{C}_{alg} = \text{Partition(P,S)}$ be the $k$-clustering of $P$ induced by the set $S$ of centers returned by the **k-means++**. Note that $\mathcal{C}_{alg}$ is a random variable which depends on the random choices made by the algorithm. Then:*
+$$
+E[\Phi_{kmeans}(\mathcal{C}_{alg})] \le 8(\ln k +2)
+\cdot \Phi_{kmeans}^{opt}(k)
+$$
+*Where the expectation is over all possible sets $S$ returned by k-means++, which depend on the random choices made by the algorithm.*
+
+**Remark:** There exist a sequential constant-approximation algorithm that runs in cubic time for points in $\R^D$ with constant $D$, however it is impractical for large datasets.
+
+
+
+### Core-set-based approach for k-means
+
+We study a **core-set-based approach** similar to the one used for k-center
+
+<img src="assets/coreset.png" height=250>
+
+### Weighted k-means clustering
+
+One can define the following, more general,  **weighted variant of the k-means clustering** problem.
+
+Let $P$ be a set of $N$ points from a metric space $(M,d)$, and let $k$ be an integer in $[1,N]$. Suppose that for each point $p \in P$, an integer weight $w(p)>0$ is also given. We want to compute the $k$-clustering $\mathcal{C} = (C_1,C_2,\dots,C_k; c_1,c_2,\dots,c_k)$ of $P$ which minimizes the following objective function:
+$$
+\Phi^w_{kmeans}(\mathcal{C}) = \sum^k_{1=1}\sum_{p \in C_i} w(p) \cdot (d(p, c_i))^2
+$$
+That is, the average weighted squared distance of a point from its cluster center.
+
+**Observation:** the unweighted k-means clustering problem Is a space case of the weighted variant where all weights are equal to 1.
+
+Most of the algorithms known for the standard k-means clustering problem can be adapted to solve the weighted variant. It is sufficient to **regard each point $p$ as representing $w(p)$ identical copies of itself**. The same approximation guarantees are  maintained.
+
+For example:
+
+**Lloyd’s algorithm:** remains virtually identical except that:
+
+- The centroid of a cluster $C_i$ is defined as $(1/\sum_{p \in C_i} w(p)) \sum_{p \in C_i} w(p) \cdot p$
+- The objective function $\Phi ^w_{means}(\mathcal{C})$ is used.
+
+**K-means++:** remains virtually identical except that the selection of the $i$-th center $c_i$ is now done as follows:
+
+$c_i \larr \text{random point chosen from } P-S, \text{where a point } P \\ \quad\quad\  \text{is chosen with probability } w(p) \cdot (d(p, S)) ^2 / \sum_{q \in P-S} (w(p) \cdot (d(q,S))^2)$
+
+
+
+### Core-set-based MapReduce algorithm for k-means
+
+The following MapReduce algorithm implements the corset-based approach for k-means-
+
+Let $\mathcal{A}$ be your favorite sequential algorithm for k-means, and denote its weighted variant with $\mathcal{A}^w$.
+
+- Round 1: Partition $P$ arbitrarily in $\ell$ subsets of equal size $P_1,P_2, \dots, P_\ell$ and execute $\mathcal{A}$ independently on each $P_i$. For $1 \le i \le \ell$, let $T_i$ be the set of $k$ centers computed by $\mathcal{A}$ on $P_i$. For each $p \in P_i$ define its *proxy* $\pi(p)$ as its closest center in $T_i$, and for each $q \in T_i$, define tis *weight* $w(q)$ as the number of points of $P_i$ whose proxy is $q$.
+- Round 2: Gather the **core-set** $T = \bigcup^\ell_{i = 1} T_i$ for $\ell \cdot k$ points, together with their weights. Using a single reducer, run $\mathcal A^w$ on $T$ to identify a set $S = \{c_1,c_2,\dots,c_k\}$ of $k$ centers.
+- Round 3: Run $\text{Partition(P,S)}$ to return the final clustering.
+
+Let us call the algorithm: $\text{MR-kmeans}(\mathcal{A}, \mathcal{A}^w)$.
+
+#### Analysis
+
+Assume $k = o(N)$. By setting $\ell = \sqrt{N/k}$, it is easy to see that the 3-round $\text{MR-kmeans}(\mathcal{A},\mathcal{A}^w)$ algorithm can be implemented using:
+
+- Local space $M_L = O(\sqrt{N \cdot k}) = o (N)$
+- Aggregate space $M_A = O(N)$
+
+The quality of the solution returned by the algorithm is stated in the following theorem.
+
+$\bold{\text{Theorem}}$
+
+*Suppose that $\mathcal{A}$ (resp., $\mathcal{A}^w$) is an $\alpha$-approximation algorithm for the k-means clustering (resp. Weighted k-means clustering), for some $\alpha > 1$, and let $\mathcal{C}_{alg}$ be the $k$-clustering of $P$ returned by $\text{MR-kmeans} (\mathcal{A},\mathcal{A}^w)$. Then:*
+$$
+\Phi_{kmeans}(\mathcal{C}_{alg}) \le
+(6\alpha + 4\alpha^2)\cdot \Phi_{kmeans}^{opt} (P,k)
+$$
+*That is, $\text{MR-kmeans} (\mathcal{A},\mathcal{A}^w)$ is a $(6\alpha + 4\alpha^2)$-approximation algorithm.*
+
+$\bold{\text{Definition}}$
+
+Given a point-set $P$, a core-set $T \sube P$ and a proxy function $\pi : P \rarr T$, we say that $T$ is a **$\bold{\gamma}$-core-set** for $P$, $k$ and the k-means objective if
+$$
+\sum_{p \in P}(d(p, \pi(p)))^2 \le \gamma \cdot \Phi^{opt}_{kmeans}(P,k)
+$$
+**Remark:** intuitively, the smaller $\gamma$, the better $T$ (together with the proxy function) represents $P$ with respect to the k-means clustering problem, and it is likely that a good solution for the problem can be extracted from $T$, by weighing each point of $T$ with the number of points for which it acts as proxy.
+
+The following lemma relates the quality of the solution returned by $\text{MR-kmeans} (\mathcal{A},\mathcal{A}^w)$ to the quality of the core-set $T$ and to the approximation guarantee of $\mathcal{A}^w$.
+
+$\bold{\text{Lemma 1}}$
+
+Suppose that the core-set $T$ computed in Round 1 of $\text{MR-kmeans} (\mathcal{A},\mathcal{A}^w)$ is a $\gamma$-core-set and that $\mathcal{A}^w$ is an $\alpha$-approximation algorithm for weighted k-means clustering, for some $\alpha > 1$. Let $\mathcal C_{alg}$ be the $k$-clustering of $P$ retuned by $\text{MR-kmeans} (\mathcal{A},\mathcal{A}^w)$. Then:
+$$
+\Phi_{kmeans}(\cal C_{alg}) \le 
+4\alpha + \gamma \cdot (2+4\alpha)
+$$
+**Remark:** The lemma implies that by choosing a $\gamma$-core-set with small $\gamma$, the penalty in accuracy incurred by the MapReduce algorithm with respect to the sequential algorithm is small. This shows that accurate solutions even in the big data scenario can be computed.
+
+$\bold{\text{Lemma 2}}$
+
+If $\cal A$ is an $\alpha$-approximation algorithm for k-means clustering, then the core-set $T$ computed in Round 1 of $\text{MR-kmeans} (\mathcal{A},\mathcal{A}^w)$ is a $\gamma$-core-set with:
+$$
+\gamma = \alpha
+$$
+$\bold{\text{Proof}}$
+
+Let $S^{opt}$  be the set of optimal centers for $P$ (i.e, those of the clustering with value of the objective function $\Phi^{opt}_{kmeans}(P,k)$). Let also $S_i^{opt}$ be the set of optimal centers for $P_i$.
+
+Recall that for every $1 \le i\le \ell$, for each $p \in P_i$ its proxy $\pi(p)$ is the point of $T_i$ closest to $p$, thus $d(p, \pi(p)) = d(p, T_i)$.
+
+Hence, we have:
+$$
+\begin{align}
+\sum_{p \in P}d^2(p, \pi(p)) &=
+\sum_{i = 1}^\ell\sum_{p \in P_i}(d(p, T_i))^2\\
+&\le\sum_{i = 1}^\ell \alpha \sum_{p \in P_i}(d(p, S_i^{opt}))^2\\
+&\le\alpha \sum_{i = 1}^\ell \sum_{p \in P_i}(d(p, S_i^{opt}))^2\\
+&=\alpha \sum_{p \in P_i}(d(p, S_i^{opt}))^2
+= \alpha \Phi^{opt}_{kmeans}(P,k)\\
+\end{align}
+$$
+(40) follow since $\cal A$ is an $\alpha$-approximation algorithm;
+
+(41) follow since $S^{opt}$ Is not necessarily optimal for $P_i$.
+
+<div style="font-size:30px" align="right">□</div>
+
+ $\bold{\text{Proof of Theorem}}\ (35)$
+
+The theorem is an immediate consequence of Lemmas 1 and 2.
+
+<div style="font-size:30px" align="right">□</div>
+
+**Observations:**
+
+- A more careful analysis shows that the constants in the approximation factor of $\text{MR-kmeans} (\mathcal{A},\mathcal{A}^w)$ are actually lower.
+- If $k’ > k$ centers are selected from each $P_i$ in Round 1 (e.g.  by executing) $k’$ iterations of the for-loop of k-means++, the quality of the core-set $T$ improves. In fact, for low dimensional spaces, a $\gamma$-core-set $T$  with $\gamma \ll \alpha$ can be built in this fashion using a not too large $k’$.
+- If a $\gamma$-core-set $T$ with very small $\gamma$ is used, the approximation guarantee of $\text{MR-kmeans} (\mathcal{A},\mathcal{A}^w)$ become close to $4\alpha$.
+
+
+
+## K-median clustering
+
+### Definition and observations
+
+Given a point-set $P$ from a metric space $(M, d)$ and an integer $k > 0$, the k-median clustering problem requires to determine a $k$-clustering $\cal C = (C_1,C_2, \dots, C_k; c_1,c_2, \dots, c_k)$ which minimizes:
+$$
+\Phi_{kmedian}(\mathcal{C}) = \sum_{i = 1}^{k}
+\sum_{a \in C_i} d(a, c_i)
+$$
+**Our aim:**
+
+- Unlike the case of k-means clustering, for k-median we will focus on the case where points belong to arbitrary metric spaces, but the **centers belong to the input point-set.**
+- Traditionally, when centers of the clusters belong to the input they are referred to as **medoids**. 
+- We will first study the popular PAM sequential algorithm devised by L. Kaufman and P.J. Rousseeuw in 1987 and based on the **local search** optimization strategy. Then, we will discuss how to cope with very large inputs.  
+
+###							 						 					 				 			 	Partitioning Around Medoids (PAM) algorithm
+
+$\bold{\text{Input}}$ Set $P$ of $N$ points from $(M, d)$, integer $k > 1$
+
+$\bold{\text{Output}}$ $k$-clustering $\mathcal C = (C_1,C_2, \dots, C_k; c_1,c_2, \dots, c_k)$ of $P$ with small $\Phi_{kmedian}(\cal C)$.
+$$
+\begin{multline*}
+\begin{aligned}
+& \bold{\text{PAM(P, k)}}\\
+1.\ & S\larr \{c_1,c_2,\dots,c_k\}\text{ (arbitrary set of}\ k \text{ points of } P \text{)}\\
+2.\ & \cal C \larr \text{Partition(P,S)}\\
+3.\ & \text{stopping-condition } \larr \text{false} \\
+4.\ &\bold{\text{while}} \text{ (!stopping-condition)} \bold{\text{ do}}\\
+5.\ &\quad \text{stopping-condition} \larr \text{true}\\
+6.\ &\quad \bold{\text{for each }} p \in P-S \bold{\text{ do }}\\
+7.\ &\quad\quad \bold{\text{for each }} c \in S \bold{\text{ do }}\\
+8.\ &\quad\quad\quad S' \larr (S - \{c\})\cup \{p\} \\
+9.\ &\quad\quad\quad \mathcal C' \larr \text{Partition(P,S)} \\
+10.\ &\quad\quad\quad \bold{\text{if }} \Phi_{kmedian}(\mathcal{C'}) < \Phi_{kmedian}(\mathcal{C}) \bold{\text{ then }}\\
+11.\ &\quad\quad\quad\quad \text{stopping-condition } \larr \text{false} \\
+12.\ &\quad\quad\quad\quad \cal C \larr \cal C'\\
+13.\ &\quad\quad\quad\quad S \larr S'\\
+14.\ &\quad\quad\quad\quad \text{exith both for-each loops}\\
+15.\ &\bold{\text{return}}\ \cal C
+\end{aligned}
+\end{multline*}
+$$
+**Example:**
+
+| ![ex1](assets/ex1.png) | ![ex2](assets/ex2.png) |
+| ---------------------- | ---------------------- |
+| ![ex3](assets/ex3.png) | ![ex4](assets/ex4.png) |
+| ![ex5](assets/ex5.png) | ![ex6](assets/ex6.png) |
+| ![ex7](assets/ex7.png) | ![ex8](assets/ex8.png) |
+
+
+
+$\bold{\text{Theorem}}$
+
+Let $\Phi^{opt}_{kmedian}(k)$ be the minimum value of $\Phi_{kmedian}(\cal C)$ over all possible $k$-clustering $\cal C$ of $P$, and let $\mathcal C_{alg}$ be the $k$-clustering of $P$ returned by the PAM algorithm. Then:
+$$
+\Phi_{kmedian}(\mathcal C_{alg}) \le 5\cdot\Phi_{kmedian}^{opt} (k)
+$$
+
+#### Remarks
+
+- The PAM algorithm is **very slow in practice** especially for large inputs since: (1) the local search may require a large number of iterations to converge; and (2) in each iteration up to $(N − k) · k$ swaps may need to be checked, and for each swap a new clustering must be computed. 
+- The first issue can be tackled by **stopping the iterations when the objective function does not decrease significantly**. It can be shown that an approximation guarantee similar to the one stated in the theorem can be achieved with a reasonable number of iterations. 
+- A faster alternative to PAM is an adaptation of the Lloyd’s algorithm where the center of a cluster $C$ is defined to be the point of $C$ that minimizes the sum of the distances to all other points of C. This center is called medoid rather than centroid. This adaptation appears faster than PAM and still very accurate in practice.
+
+
+
+### k-median clustering for big data
+
+The solution of the k-median clustering problem on very large point sets $P$ can be attained using the same core-set-based approach illustrated for the case of k-means.
+
+- Define the weighted variant of the problem where each point $p \in P$ has a weight $w(p)$  and the objective function for a $k$-clustering $\mathcal C = (C_1,C_2, \dots, C_k; c_1,c_2, \dots, c_k)$ is 
+  $$
+  \Phi_{kmedian}^w(\mathcal C) = 
+  \sum_{i = 1}^k\sum_{p \in C_i} w(p)\cdot d(p,c_i)
+  $$
+
+- Select your favorite sequential algorithm $\cal B$ and its weighted counterpart $\cal B^w$.
+
+- Select a weighted core-set $T$ by running $\cal B$ independently on the subset of a partition of $P$ and extract the final set of centers from $T$ using $\cal B^w$.
+
+- Run $\text{Partition(P,S)}$
+
+### MR-kmedian$(\cal B, B^w)$
+
+The MapReduce implementation of the above strategy, which we call $\text{MR-kmedian}\cal(B,B^w)$, is identical to the one we saw before, except that $\cal A$ and $\cal A^w$ are replaced by $\cal B$ and $\cal B^w$.
+
+$\text{MR-kmedian}\cal(B,B^w)$ Requires 3 rounds, local space $M_L = O(\sqrt{N \cdot k})$, and aggregate space $M_A = O(N)$, where $N$ is the input size. Moreover, the following theorem can be proved.
+
+$\bold{\text{Theorem}}$
+
+*Suppose that $\cal B$ (resp., $\cal B^w$) is an $\alpha$-approximation algorithm for k-median clustering (resp. weighted k-median clustering), for some $\alpha > 1$, and let $\cal C_{alg}$ be the $k$-clustering of $P$ returned by$ \text{MR-kmedian}\cal(B,B^w) $. Then:*
+$$
+\Phi_{kmedian}(\mathcal C_{alg}) =
+O(\alpha^2 \Phi^{opt}_{kmedian}(P,k))
+$$
+*That is, $\text{MR-kmedian}\cal(B,B^w)$ is a $O(\alpha^2)$-approximation algorithm.*
+
+
+
+
+
